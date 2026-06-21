@@ -1,0 +1,6 @@
+src/**
+runtime/**
+*.map
+*.log
+*.tmp
+node_modules/**

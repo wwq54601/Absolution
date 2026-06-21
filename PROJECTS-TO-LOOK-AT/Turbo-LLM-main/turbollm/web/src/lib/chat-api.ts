@@ -1,0 +1,153 @@
+import type { Conversation, Message, ChatSseEvent } from './chat-types'
+import { ApiError, authHeaders } from './api'
+
+async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...authHeaders(), ...((init?.headers as Record<string, string>) ?? {}) }
+  let body = init?.body
+  if (init && 'json' in init && init.json !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(init.json) }
+  const res = await fetch(path, { ...init, headers, body })
+  if (res.status === 204) return undefined as T
+  const text = await res.text()
+  const data = text ? (() => { try { return JSON.parse(text) } catch { return undefined } })() : undefined
+  if (!res.ok) {
+    const env = data as { error?: { code?: string; message?: string } } | undefined
+    throw new ApiError(env?.error?.code ?? 'http_error', env?.error?.message ?? `Request failed with status ${res.status}.`, res.status)
+  }
+  return data as T
+}
+
+export function listConversations(q?: string): Promise<{ conversations: Conversation[] }> {
+  return req(`/api/v1/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`)
+}
+
+export function createConversation(partial?: Partial<Pick<Conversation, 'title' | 'systemPrompt' | 'modelKey' | 'toolPolicy'>>): Promise<Conversation> {
+  return req('/api/v1/conversations', { method: 'POST', json: partial ?? {} })
+}
+
+/** Launch the built-in TurboLLM Expert thread (spec 08 §2). The expert system
+ *  prompt lives server-side and is never sent from the client. */
+export function createExpertConversation(): Promise<Conversation> {
+  return req('/api/v1/conversations/expert', { method: 'POST', json: {} })
+}
+
+export function getConversation(id: string): Promise<Conversation> {
+  return req(`/api/v1/conversations/${encodeURIComponent(id)}`)
+}
+
+export function updateConversation(id: string, patch: Partial<Pick<Conversation, 'title' | 'systemPrompt' | 'sampling'>>): Promise<Conversation> {
+  return req(`/api/v1/conversations/${encodeURIComponent(id)}`, { method: 'PATCH', json: patch })
+}
+
+export function deleteConversation(id: string): Promise<{ ok: true }> {
+  return req(`/api/v1/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function stopGeneration(conversationId: string): Promise<{ ok: true }> {
+  return req('/api/v1/chat/stop', { method: 'POST', json: { conversationId } })
+}
+
+export function editMessage(convId: string, msgId: string, content: string): Promise<{ messages: Message[] }> {
+  return req(`/api/v1/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, { method: 'PUT', json: { content } })
+}
+
+export function deleteMessage(convId: string, msgId: string): Promise<{ ok: true }> {
+  return req(`/api/v1/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, { method: 'DELETE' })
+}
+
+export function regenerate(convId: string): Promise<{ ok: true }> {
+  return req(`/api/v1/conversations/${encodeURIComponent(convId)}/regenerate`, { method: 'POST', json: {} })
+}
+
+/** Streaming send — returns an async generator that yields typed SSE events. */
+export async function* sendMessage(
+  convId: string,
+  content: string,
+  signal: AbortSignal,
+  images?: string[],
+  docContext?: string,
+  textAttachments?: string[],
+  disableThinking?: boolean,
+): AsyncGenerator<ChatSseEvent> {
+  const res = await fetch(`/api/v1/conversations/${encodeURIComponent(convId)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ content, images: images?.length ? images : undefined, docContext: docContext || undefined, textAttachments: textAttachments?.length ? textAttachments : undefined, disableThinking: disableThinking || undefined }),
+    signal,
+  })
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '')
+    const env = (() => { try { return JSON.parse(text) } catch { return undefined } })() as { error?: { code?: string; message?: string } } | undefined
+    throw new ApiError(env?.error?.code ?? 'http_error', env?.error?.message ?? `Request failed with status ${res.status}.`, res.status)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      let event = ''
+      for (const line of lines) {
+        if (line.startsWith('event: '))      { event = line.slice(7).trim() }
+        else if (line.startsWith('data: ')) {
+          const raw = line.slice(6).trim()
+          try {
+            const data = JSON.parse(raw)
+            if (event) yield { event, data } as ChatSseEvent
+          } catch { /* skip malformed */ }
+          event = ''
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+/**
+ * Streaming continue — regenerates a fresh assistant response for the conversation's
+ * existing last user message, WITHOUT adding a new user message. Used by retry/edit.
+ */
+export async function* continueConversation(
+  convId: string,
+  signal: AbortSignal,
+  disableThinking?: boolean,
+): AsyncGenerator<ChatSseEvent> {
+  const res = await fetch(`/api/v1/conversations/${encodeURIComponent(convId)}/continue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ disableThinking: disableThinking || undefined }),
+    signal,
+  })
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '')
+    const env = (() => { try { return JSON.parse(text) } catch { return undefined } })() as { error?: { code?: string; message?: string } } | undefined
+    throw new ApiError(env?.error?.code ?? 'http_error', env?.error?.message ?? `Request failed with status ${res.status}.`, res.status)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      let event = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) { event = line.slice(7).trim() }
+        else if (line.startsWith('data: ')) {
+          const raw = line.slice(6).trim()
+          try { const data = JSON.parse(raw); if (event) yield { event, data } as ChatSseEvent } catch { /* skip */ }
+          event = ''
+        }
+      }
+    }
+  } finally { reader.releaseLock() }
+}

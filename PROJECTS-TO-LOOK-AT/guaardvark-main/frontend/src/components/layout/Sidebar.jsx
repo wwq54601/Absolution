@@ -1,0 +1,448 @@
+
+import React, { useState, useEffect } from "react";
+import { NavLink, useLocation } from "react-router-dom";
+import {
+  Drawer,
+  Box,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Tooltip,
+  Typography,
+  useTheme,
+  useMediaQuery,
+  Avatar,
+  IconButton,
+  Divider,
+} from "@mui/material";
+import { useAppStore } from "../../stores/useAppStore";
+import { activateResourceManager } from "../../utils/resource_manager";
+import { spacing } from "../../theme/tokens";
+
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import ArticleIcon from "@mui/icons-material/Article";
+import FolderIcon from "@mui/icons-material/Folder";
+import LanguageIcon from "@mui/icons-material/Language";
+import RuleFolderIcon from "@mui/icons-material/RuleFolder";
+import SettingsIcon from "@mui/icons-material/Settings";
+import AccountBoxIcon from "@mui/icons-material/AccountBox";
+import { GuaardvarkLogo } from "../branding";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import DesktopWindowsIcon from "@mui/icons-material/DesktopWindows";
+import PetsIcon from "@mui/icons-material/Pets";
+import ImageIcon from "@mui/icons-material/Image";
+import GraphicEqIcon from "@mui/icons-material/GraphicEq";
+import CodeIcon from "@mui/icons-material/Code";
+import LibraryBooksIcon from "@mui/icons-material/LibraryBooks";
+import BuildIcon from "@mui/icons-material/Build";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import StickyNote2Icon from "@mui/icons-material/StickyNote2";
+import ExtensionIcon from "@mui/icons-material/Extension";
+import HiveIcon from "@mui/icons-material/Hive";
+import CampaignIcon from "@mui/icons-material/Campaign";
+import TextFieldsIcon from "@mui/icons-material/TextFields";
+import QueueIcon from "@mui/icons-material/Queue";
+import MonitorHeartIcon from "@mui/icons-material/MonitorHeart";
+import MovieFilterIcon from "@mui/icons-material/MovieFilter";
+import LocalMoviesIcon from "@mui/icons-material/LocalMovies";
+import MusicVideoIcon from "@mui/icons-material/MusicVideo";
+import BubbleChartIcon from "@mui/icons-material/BubbleChart";
+import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
+import VideoCameraBackIcon from "@mui/icons-material/VideoCameraBack";
+
+import SystemMetricsModal from "../modals/SystemMetricsModal";
+import AgentScreenViewer from "../agent/AgentScreenViewer";
+
+const COLLAPSED_WIDTH = spacing.sidebarCollapsed;
+const EXPANDED_WIDTH = spacing.sidebarExpanded;
+
+const navGroups = [
+  {
+    label: "Main",
+    items: [
+      { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
+      { text: "Chat", icon: <ChatBubbleOutlineIcon />, path: "/chat" },
+      { text: "Code Editor", icon: <CodeIcon />, path: "/code-editor" },
+      { text: "Files", icon: <ArticleIcon />, path: "/documents" },
+      { text: "Media", icon: <PhotoLibraryIcon />, path: "/images" },
+      { text: "Notes", icon: <StickyNote2Icon />, path: "/notes" },
+    ],
+  },
+  {
+    // Per master-plan §7 (Option A) — surface VideoGen / ImageGen / AudioGen
+    // as first-class apps under their own group. Media (the library viewer)
+    // stays in Main per the user's note "accessible from Files and Studio";
+    // it shows up in Main and any consumer can deep-link from anywhere.
+    // "Video Text" is temporary — it gets absorbed into Video Editor in
+    // Phase 9 of the editor plan, then this entry goes away.
+    label: "Studio",
+    items: [
+      { text: "Film Crew", icon: <LocalMoviesIcon />, path: "/film-crew" },
+      { text: "Music Video", icon: <MusicVideoIcon />, path: "/music-video" },
+      { text: "Video Editor", icon: <MovieFilterIcon />, path: "/video-editor" },
+      { text: "Video Gen", icon: <VideoCameraBackIcon />, path: "/video" },
+      { text: "Image Gen", icon: <ImageIcon />, path: "/batch-images" },
+      { text: "Audio Studio", icon: <GraphicEqIcon />, path: "/audio" },
+      { text: "Video Text", icon: <TextFieldsIcon />, path: "/video-text-overlay" },
+    ],
+  },
+  {
+    label: "Management",
+    items: [
+      { text: "Clients", icon: <AccountBoxIcon />, path: "/clients" },
+      { text: "Projects", icon: <FolderIcon />, path: "/projects" },
+      { text: "Websites", icon: <LanguageIcon />, path: "/websites" },
+      // Job scheduler — the legacy TaskPage at /tasks owns creation and
+      // queueing of user-initiated jobs (VideoGen, FileGen, scraping,
+      // research, code analysis, anything the system can do).
+      // Activity is the read-only view of system-driven background work
+      // (training, indexing, self-improvement) backed by the new
+      // /api/jobs adapter layer.
+      { text: "Jobs", icon: <QueueIcon />, path: "/tasks" },
+      { text: "Activity", icon: <MonitorHeartIcon />, path: "/activity" },
+      { text: "Outreach", icon: <CampaignIcon />, path: "/outreach" },
+    ],
+  },
+  {
+    label: "Configuration",
+    items: [
+      { text: "Rules & Prompts", icon: <RuleFolderIcon />, path: "/rules" },
+      { text: "Agent Tools", icon: <BuildIcon />, path: "/tools" },
+      { text: "Agents", icon: <SmartToyIcon />, path: "/agents" },
+      { text: "FileGen", icon: <PetsIcon />, path: "/file-generation" },
+      { text: "CSVGen", icon: <LibraryBooksIcon />, path: "/content-library" },
+      { text: "Swarm", icon: <HiveIcon />, path: "/swarm" },
+      { text: "Plugins", icon: <ExtensionIcon />, path: "/plugins" },
+      { text: "System Map", icon: <BubbleChartIcon />, path: "/system-map" },
+      { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
+    ],
+  },
+];
+
+const Sidebar = () => {
+  const location = useLocation();
+  const theme = useTheme();
+  const systemName = useAppStore((state) => state.systemName);
+  const systemLogo = useAppStore((state) => state.systemLogo);
+  const isExpanded = useAppStore((state) => state.sidebarExpanded);
+  const toggleSidebar = useAppStore((state) => state.toggleSidebar);
+  const setSidebarExpanded = useAppStore((state) => state.setSidebarExpanded);
+  const [metricsModalOpen, setMetricsModalOpen] = useState(false);
+  // Store-backed so slash commands (/agent, /chat) can flip the viewer
+  // alongside session mode. Previously this was local useState, which made
+  // the viewer state non-shareable and lost on every reload.
+  const agentScreenOpen = useAppStore((s) => s.agentScreenOpen);
+  const setAgentScreenOpen = useAppStore((s) => s.setAgentScreenOpen);
+  const isBelowMd = useMediaQuery(theme.breakpoints.down("md"));
+
+  useEffect(() => {
+    if (isBelowMd && isExpanded) {
+      setSidebarExpanded(false);
+    }
+  }, [isBelowMd, isExpanded, setSidebarExpanded]);
+
+  const drawerWidth = isExpanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH;
+
+  useEffect(() => {
+    activateResourceManager();
+  }, []);
+
+  const getNavLinkStyle = (isActive) => ({
+    backgroundColor: isActive ? theme.palette.action.selected : "transparent",
+    color: "inherit",
+    width: "100%",
+    minHeight: 40,
+    justifyContent: isExpanded ? "flex-start" : "center",
+    px: isExpanded ? 2 : 1.5,
+    py: 0.75,
+    mb: 0.25,
+    borderRadius: "6px",
+    "&:hover": {
+      backgroundColor: isActive
+        ? theme.palette.action.selected
+        : theme.palette.action.hover,
+      "& .MuiListItemIcon-root svg": { color: theme.palette.primary.main },
+    },
+    "& .MuiListItemIcon-root": {
+      minWidth: isExpanded ? 36 : 0,
+      justifyContent: "center",
+      color: isActive
+        ? theme.palette.primary.main
+        : theme.palette.text.secondary,
+      "& svg": { fontSize: 22 },
+    },
+  });
+
+  return (
+    <>
+      <Drawer
+        variant="permanent"
+        sx={{
+          width: drawerWidth,
+          flexShrink: 0,
+          "& .MuiDrawer-paper": {
+            width: drawerWidth,
+            boxSizing: "border-box",
+            overflowX: "hidden",
+            borderRight: "none",
+            transition: theme.transitions.create("width", {
+              duration: 200,
+              easing: theme.transitions.easing.easeInOut,
+            }),
+          },
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+          }}
+        >
+          {}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1.5,
+              px: isExpanded ? 2 : 0,
+              py: 1.5,
+              justifyContent: isExpanded ? "flex-start" : "center",
+              minHeight: 56,
+            }}
+          >
+            <Avatar
+              component={NavLink}
+              // Static for now; later this can be SettingsPage-configurable or route to Agent Chat.
+              to="/dashboard"
+              src={systemLogo ? `/api/uploads/${systemLogo}` : undefined}
+              sx={{
+                width: 36,
+                height: 36,
+                border: "1px solid rgba(255, 255, 255, 0.24)",
+                bgcolor: "#000",
+                color: "#fff",
+                flexShrink: 0,
+                textDecoration: "none",
+                p: systemLogo ? 0.5 : 0,
+                transition: theme.transitions.create(["border-color", "box-shadow"], {
+                  duration: 150,
+                }),
+                "&:hover": {
+                  borderColor: "rgba(255, 255, 255, 0.6)",
+                  boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.08)",
+                },
+                "& .MuiAvatar-img": {
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                },
+              }}
+            >
+              {!systemLogo && <GuaardvarkLogo size={24} color="#fff" />}
+            </Avatar>
+            {isExpanded && (
+              <Typography
+                variant="subtitle2"
+                noWrap
+                sx={{
+                  fontWeight: 600,
+                  color: "text.primary",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {systemName || "Guaardvark"}
+              </Typography>
+            )}
+          </Box>
+
+          <Divider />
+
+          {}
+          <Box sx={{ flexGrow: 1, overflow: "auto", px: 0.75, pt: 1 }}>
+            {navGroups.map((group, groupIdx) => (
+              <React.Fragment key={group.label}>
+                {groupIdx > 0 && <Divider sx={{ my: 0.75 }} />}
+                {isExpanded && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      px: 1.5,
+                      py: 0.5,
+                      display: "block",
+                      color: "text.secondary",
+                      fontWeight: 600,
+                      fontSize: "0.65rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                    }}
+                  >
+                    {group.label}
+                  </Typography>
+                )}
+                <List disablePadding>
+                  {group.items.map((item) => {
+                    // Match on whole path segments, not raw string prefix.
+                    // A bare startsWith() makes "/video" (Video Gen) light up
+                    // when the route is "/video-editor" or "/video-text-overlay",
+                    // because both literally start with "/video". Requiring an
+                    // exact match or a "/" boundary keeps nested routes
+                    // (e.g. /clients/123 -> Clients) highlighting correctly
+                    // while killing the sibling-collision.
+                    const isActive = item.path === "/"
+                      ? location.pathname === "/"
+                      : location.pathname === item.path ||
+                        location.pathname.startsWith(item.path + "/");
+
+                    const button = (
+                      <ListItemButton
+                        component={NavLink}
+                        to={item.path}
+                        sx={() => getNavLinkStyle(isActive)}
+                      >
+                        <ListItemIcon>{item.icon}</ListItemIcon>
+                        {isExpanded && (
+                          <ListItemText
+                            primary={item.text}
+                            primaryTypographyProps={{
+                              fontSize: "0.825rem",
+                              fontWeight: isActive ? 600 : 400,
+                              noWrap: true,
+                            }}
+                          />
+                        )}
+                      </ListItemButton>
+                    );
+
+                    return (
+                      <ListItem key={item.text} disablePadding sx={{ display: "block" }}>
+                        {isExpanded ? (
+                          button
+                        ) : (
+                          <Tooltip title={item.text} placement="right" arrow>
+                            {button}
+                          </Tooltip>
+                        )}
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              </React.Fragment>
+            ))}
+          </Box>
+
+          {}
+          <Box sx={{ borderTop: 1, borderColor: "divider", p: 0.75 }}>
+            {}
+            <Tooltip title={isExpanded ? "" : "System Metrics"} placement="right" arrow>
+              <IconButton
+                onClick={() => setMetricsModalOpen(!metricsModalOpen)}
+                sx={{
+                  width: "100%",
+                  height: 36,
+                  borderRadius: "6px",
+                  justifyContent: isExpanded ? "flex-start" : "center",
+                  px: isExpanded ? 2 : 0,
+                  gap: 1.5,
+                  color: metricsModalOpen ? theme.palette.primary.main : theme.palette.text.secondary,
+                  backgroundColor: metricsModalOpen ? theme.palette.action.selected : "transparent",
+                  "&:hover": {
+                    backgroundColor: metricsModalOpen
+                      ? theme.palette.action.selected
+                      : theme.palette.action.hover,
+                    color: theme.palette.primary.main,
+                  },
+                }}
+              >
+                <BarChartIcon sx={{ fontSize: 22 }} />
+                {isExpanded && (
+                  <Typography variant="body2" sx={{ fontSize: "0.825rem" }}>
+                    System Metrics
+                  </Typography>
+                )}
+              </IconButton>
+            </Tooltip>
+
+            {/* Agent Screen toggle */}
+            <Tooltip title={isExpanded ? "" : "Agent Screen"} placement="right" arrow>
+              <IconButton
+                onClick={() => setAgentScreenOpen(!agentScreenOpen)}
+                sx={{
+                  width: "100%",
+                  height: 36,
+                  borderRadius: "6px",
+                  justifyContent: isExpanded ? "flex-start" : "center",
+                  px: isExpanded ? 2 : 0,
+                  gap: 1.5,
+                  color: agentScreenOpen ? theme.palette.success.main : theme.palette.text.secondary,
+                  backgroundColor: agentScreenOpen ? theme.palette.action.selected : "transparent",
+                  "&:hover": {
+                    backgroundColor: agentScreenOpen
+                      ? theme.palette.action.selected
+                      : theme.palette.action.hover,
+                    color: theme.palette.success.main,
+                  },
+                }}
+              >
+                <DesktopWindowsIcon sx={{ fontSize: 22 }} />
+                {isExpanded && (
+                  <Typography variant="body2" sx={{ fontSize: "0.825rem" }}>
+                    Agent Screen
+                  </Typography>
+                )}
+              </IconButton>
+            </Tooltip>
+
+            {}
+            <IconButton
+              onClick={toggleSidebar}
+              sx={{
+                width: "100%",
+                height: 36,
+                borderRadius: "6px",
+                mt: 0.5,
+                justifyContent: isExpanded ? "flex-start" : "center",
+                px: isExpanded ? 2 : 0,
+                gap: 1.5,
+                color: theme.palette.text.secondary,
+                "&:hover": {
+                  backgroundColor: theme.palette.action.hover,
+                  color: theme.palette.primary.main,
+                },
+              }}
+            >
+              {isExpanded ? (
+                <>
+                  <ChevronLeftIcon sx={{ fontSize: 22 }} />
+                  <Typography variant="body2" sx={{ fontSize: "0.825rem" }}>
+                    Collapse
+                  </Typography>
+                </>
+              ) : (
+                <ChevronRightIcon sx={{ fontSize: 22 }} />
+              )}
+            </IconButton>
+          </Box>
+        </Box>
+      </Drawer>
+
+      <SystemMetricsModal
+        open={metricsModalOpen}
+        onClose={() => setMetricsModalOpen(false)}
+      />
+
+      <AgentScreenViewer
+        open={agentScreenOpen}
+        onClose={() => setAgentScreenOpen(false)}
+      />
+    </>
+  );
+};
+
+export default Sidebar;

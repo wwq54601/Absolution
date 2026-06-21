@@ -1,0 +1,68 @@
+# llama-turbo repo .gitignore
+# Tracks: CLAUDE.md, RESOURCES.md, small control scripts, and the TurboLLM
+# product code under turbollm/. Does NOT track the heavy local-inference stack,
+# secrets, runtime state, or the internal docs/ strategy folder (see bottom).
+# NOTE: .gitignore does not support inline comments — keep patterns on their own lines.
+
+# Heavy local-inference stack (multi-GB; not product source)
+/atomic/
+/cuda/
+/openwebui/
+/_archive/
+
+# Secrets & runtime state
+/.webui_secret_key
+/.run/
+.omc/
+
+# Model weights & large binaries
+*.gguf
+*.safetensors
+*.bin
+*.exe
+*.dll
+*.lib
+*.pdb
+*.zip
+*.7z
+*.log
+
+# TurboLLM daemon (Node/TS) build outputs
+/turbollm/dist/
+/turbollm/src/webdist/
+
+# Local dev/preview config (machine-specific engine/model paths) + runtime
+/turbollm/dev-config.json
+/turbollm/.preview-config.json
+/turbollm/.preview-config.json.broken-*
+/turbollm/daemon.pid
+# Runtime scan/hash caches (hold the dev box's absolute local model paths)
+/turbollm/models-cache.json
+/turbollm/model-hashes.json
+# Runtime SQLite chat DB (created beside a local config dir during dev)
+/turbollm/*.db
+/turbollm/*.db-shm
+/turbollm/*.db-wal
+
+# Node / React frontend
+node_modules/
+.vite/
+*.local
+
+# Generated artifacts
+/turbollm-todos.html
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/
+*.swp
+
+# Internal product/business/strategy material — kept LOCAL ONLY, never published.
+# The repo is/will be public; these are not for distribution. (Purged from history
+# 2026-06-13.) CLAUDE.md / RESOURCES.md hold internal strategy + dev-box setup.
+/docs/
+/CLAUDE.md
+/RESOURCES.md

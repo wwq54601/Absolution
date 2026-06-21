@@ -1,0 +1,93 @@
+{
+  "name": "mythos-router",
+  "version": "1.20.1",
+  "description": "Capybara-tier CLI router — Claude Opus 4.8 with Adaptive Thinking, Strict Write Discipline, and Self-Healing Memory",
+  "type": "module",
+  "bin": {
+    "mythos": "dist/cli.js",
+    "mythos-router": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./cli": "./dist/cli.js",
+    "./mcp": "./dist/mcp.js",
+    "./schema": "./schemas/external-agent-actions.schema.json",
+    "./schemas/external-agent-actions.schema.json": "./schemas/external-agent-actions.schema.json"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "schemas",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage \"test/**/*.test.ts\"",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/cli.js",
+    "chat": "tsx src/cli.ts chat",
+    "verify": "tsx src/cli.ts verify",
+    "dream": "tsx src/cli.ts dream",
+    "stats": "tsx src/cli.ts stats",
+    "mcp": "tsx src/cli.ts mcp",
+    "runs": "tsx src/cli.ts runs",
+    "policy": "tsx src/cli.ts policy",
+    "init": "tsx src/cli.ts init",
+    "rebuild": "tsx -e \"import { rebuildIndex } from './src/memory.js'; rebuildIndex();\""
+  },
+  "keywords": [
+    "claude",
+    "opus",
+    "anthropic",
+    "capybara",
+    "mythos",
+    "adaptive-thinking",
+    "ai-agent",
+    "cli",
+    "agent",
+    "llm",
+    "developer-tools",
+    "coding-assistant",
+    "filesystem-verification",
+    "strict-write-discipline",
+    "swd",
+    "external-agent",
+    "agent-verification",
+    "agent-security",
+    "mcp",
+    "model-context-protocol",
+    "byok",
+    "fable-5",
+    "claude-fable"
+  ],
+  "author": "thewaltero",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thewaltero/mythos-router.git"
+  },
+  "homepage": "https://x.com/thewaltero",
+  "bugs": {
+    "url": "https://github.com/thewaltero/mythos-router/issues"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

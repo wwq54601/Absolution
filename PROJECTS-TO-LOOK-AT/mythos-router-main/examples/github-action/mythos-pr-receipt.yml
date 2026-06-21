@@ -1,0 +1,98 @@
+name: Mythos PR Receipt
+
+# Posts a Mythos verification summary as a sticky PR comment so reviewers see
+# the SWD trust state of a change without installing anything.
+#
+# Behavior:
+#   * Always runs the read-only `verify --ci` gate (no API key needed).
+#   * If the PR contains a committed SWD receipt, renders the latest one as a
+#     PR-ready Markdown table (`receipts show latest --markdown`).
+#   * Otherwise posts the `verify --ci` summary.
+#   * The comment is updated in place on each push (idempotent), not duplicated.
+#
+# This is intentionally read-only with respect to your code: it never applies
+# file actions. It only reads + reports.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write # needed to create/update the PR comment
+
+concurrency:
+  group: mythos-pr-receipt-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  receipt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Read-only CI gate. `|| true` so a non-zero exit (findings) does not
+      # abort the comment step — the summary is what we want to surface.
+      - name: Run Mythos CI verification
+        run: |
+          npx -y mythos-router@latest verify --ci | tee verify.txt || true
+
+      # Best-effort: render the newest committed receipt, if any. Failure here
+      # (no receipts in the repo) is expected and non-fatal.
+      - name: Render latest receipt (if present)
+        run: |
+          npx -y mythos-router@latest receipts show latest --markdown > receipt.md 2>/dev/null || true
+          if [ ! -s receipt.md ]; then rm -f receipt.md; fi
+
+      - name: Upsert PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- mythos-receipt -->';
+
+            let body;
+            if (fs.existsSync('receipt.md')) {
+              body = fs.readFileSync('receipt.md', 'utf8');
+            } else {
+              const verify = fs.existsSync('verify.txt')
+                ? fs.readFileSync('verify.txt', 'utf8')
+                : 'No verification output was produced.';
+              // Strip ANSI color codes the CLI emits for the terminal.
+              const clean = verify.replace(/\u001b\[[0-9;]*m/g, '').trim();
+              body = [
+                '### Mythos CI Verification',
+                '',
+                'No committed SWD receipt found in this PR. Read-only `verify --ci` summary:',
+                '',
+                '```',
+                clean.slice(0, 60000),
+                '```',
+              ].join('\n');
+            }
+
+            body = `${marker}\n${body}`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user.type === 'Bot' && c.body && c.body.includes(marker),
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

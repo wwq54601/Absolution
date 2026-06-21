@@ -1,0 +1,32 @@
+<svg width="64" height="64"
+     viewBox="0 0 64 64"
+     fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Y -->
+
+  <path
+    d="M16 12L30 30V52"
+    stroke="currentColor"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <path
+    d="M48 12L34 30"
+    stroke="currentColor"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!-- Code Block -->
+
+  <rect
+    x="38"
+    y="38"
+    width="12"
+    height="12"
+    rx="2"
+    fill="currentColor"/>
+
+</svg>

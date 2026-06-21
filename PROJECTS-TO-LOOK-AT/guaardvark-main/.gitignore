@@ -1,0 +1,252 @@
+# Python
+backend/venv/
+cli/venv/
+plugins/*/venv-*/
+cli/llx.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Node
+node_modules/
+
+# Application data (generated at runtime)
+data/uploads/
+data/outputs/
+data/cache/
+data/database/
+data/models/
+data/context/
+
+# Video editor projects + migrated session (runtime user data, per-machine)
+data/video-editor-projects/
+data/video_editor_session.json.migrated
+
+# Plugin runtime artifacts (generated per-machine, never sync)
+plugins/*/outputs/
+plugins/*/output/
+plugins/*/cache/
+plugins/*/tmp/
+plugins/*/.cache/
+plugins/*/__pycache__/
+data/plugin_state.json
+data/social_outreach/
+data/outreach/
+data/docstore.json
+data/index_store.json
+data/default__vector_store.json
+data/graph_store.json
+data/conversations/sessions/
+data/training/screenshots/
+data/training/failures/
+data/training/datasets/*.jsonl
+data/training/models/
+# Servo calibration data — runtime-generated, regenerated per calibration run
+data/training/servo_logs/
+data/training/knowledge/servo_archive*.jsonl
+data/training/knowledge/*.pre_purge
+data/training/knowledge/feedback.jsonl
+data/training/poisoned_data_backup/
+
+# Agent desktop shortcuts (generated with local paths at runtime)
+data/agent/desktop/
+
+# Agent browser state — cookies, sessions, history, cache, anything that
+# should never leave the local machine. Was previously only excluded via
+# .git/info/exclude (per-clone, not shared); promoting to the tracked
+# .gitignore so a fresh clone cannot accidentally track it.
+data/agent/firefox_profile/
+data/agent/firefox_extension/
+
+# Agent XFCE runtime state — xfconf settings, panel layout, desktop-icon
+# positions. Written by xfce4-session on every launch; per-machine, never
+# meant to be tracked. The directory itself is auto-created by
+# start_agent_display.sh on first run.
+data/agent/xfce_config/
+
+# Stray local scratch files (do not commit)
+/1_logo.png
+/doc.txt
+/README.draft.md
+
+# Logs, backups, PIDs
+logs/
+backups/
+pids/
+
+# Environment
+.env
+/env
+
+# Local IDE/agent session state
+.antigravitycli/
+/SELF_CODE_AGENTS_EVIDENCE.md
+
+# Local-only planning/design docs (never pushed)
+plans/
+
+# Local-only audit reports (slices, summaries, inventories)
+audit/
+
+# Runtime cluster state — regenerated on startup, never committed
+data/cluster/
+backend/data/
+
+# Scratch scripts at repo root (root-level only, not backend/tests/)
+/test_stream.py
+
+# Frontend build
+frontend/dist/
+frontend/.vite/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Native libraries (built from source)
+backend/tools/voice/whisper.cpp/build/
+backend/tools/voice/whisper.cpp/models/
+*.so
+*.dylib
+*.dll
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Backup files
+*.BACK
+*.BACKUP
+*.backup
+*.bak
+*.orig
+
+# Plugin dependencies (installed at runtime)
+plugins/comfyui/ComfyUI/
+plugins/*/venv/
+backend/tools/voice/piper-models/*.onnx
+backend/tools/voice/piper-models/*.onnx.json
+
+# ONNX/WASM runtime files (downloaded at build time)
+frontend/public/ort-*
+frontend/public/*.wasm
+frontend/public/*.onnx
+
+# Training model weights (too large for git)
+training/models/
+unsloth_compiled_cache/
+plugins/upscaling/models/*.pth
+
+# Dependency reconciler runtime state (per-machine)
+data/dep_reconciler/
+
+# Celery beat schedule state (per-machine, runtime-managed)
+data/celerybeat-schedule.db*
+
+# --- Local scratch, backups & per-machine runtime (gitignore audit 2026-05-21) ---
+# Backup archives — the bare *.BACK rule misses compound extensions like .BACK.zip
+*.BACK.zip
+data/*_backup_*.zip
+# Loose backup/scratch copies of agent knowledge files
+data/agent/backs of agent files in this folder/
+
+# Agent desktop runtime home — mime/dbus/gvfs/recently-used caches written per launch
+# (sibling of the already-ignored data/agent/xfce_config/)
+data/agent/data_home/
+
+# GFPGAN face-restore model weights (large, fetched at runtime)
+plugins/upscaling/gfpgan/weights/
+
+# Old training-knowledge snapshots — knowledge/ is tracked, OLD.* backups are not
+data/training/knowledge/OLD.*
+
+# Root-level scratch media & frames (generated during video/audio testing)
+/*.mp4
+/*.wav
+/frame_*.jpg
+
+# Root scratch notes / AI session dumps / loose test scripts
+/GROK.md
+/.gemini_transcript_review.txt
+/test_rag.py
+backend/pytest_output.txt
+plugins/upscaling/test_gfpgan.py
+
+# Keep-local by decision: outreach targeting config + agent dev/strategy notes
+data/agent/social_outreach_targets.json
+data/agent/findings_response_2026-05-19.md
+data/agent/LEARNING_PRINCIPLES.local.md
+data/agent/PITCH.md
+data/agent/findings_*.md
+cursor_servo_diagnosis.md
+docs/android-litert-exploration.md
+docs/cluster-hardening-notes.md
+
+# Scratch YouTube manual run-scripts (ad-hoc run() scripts, not pytest)
+backend/tests/test_youtube_chat*.py
+backend/tests/test_youtube_final.py
+
+# Local migration backups and runtime editor/session state
+backend/FUCKED.migrations/
+data/video_editor_session.json
+data/video_editor_state.json
+data/training/loras/
+
+# Local-only tooling/config and seeded demo/outreach content
+pyrightconfig.json
+pytest.ini
+scripts/seed_demo_data.py
+scripts/seed_social_outreach_tasks.py
+
+# Google Indexing service-account key
+data/credentials/
+
+# Swarm internal secret (never publish) + per-film cast reference images (runtime, machine-local)
+data/.swarm_internal_secret
+data/cast_refs/
+
+# --- Personal operator docs & AI-assistant session files (2026-06-13) ---
+# These were previously protected ONLY by .git/info/exclude, which is per-clone
+# and never shared — so a fresh clone or a stray `git add -A` could track and
+# publish them. Promoted here into the tracked .gitignore (same reasoning as the
+# firefox_profile promotion above) so the protection is durable and travels with
+# the repo. These are local operator context — NEVER for the public mirror.
+# NOTE: the repo-root CLAUDE.md ignored here is Dean's PRIVATE operator file. If a
+# public contributor-facing CLAUDE.md is ever wanted, it must live at a DIFFERENT
+# path (e.g. docs/ARCHITECTURE.md) to avoid colliding with / leaking this one.
+/CLAUDE.md
+/GEMINI.md
+/KNOWN_BUGS.md
+/AGENT_SESSION_SAVE.md
+/SESSION_HANDOFF*.md
+*.code-workspace
+/guaardvark_backup.json
+/AGENTS.md
+/PUSH_PREVIEW.md
+docs/local-workspace-only/
+
+# --- Non-essential / generated artifacts (untracked 2026-06-18, public-push sweep) ---
+# Internal multi-agent audit/planning dumps (contain local absolute paths; not source)
+regroup-reports/
+# Per-machine build/runtime state, regenerated by start.sh / verify_gpu_stack.sh
+frontend/.npm_stamp
+data/gpu_stack_status.json
+data/ollama-dropin.rendered.conf

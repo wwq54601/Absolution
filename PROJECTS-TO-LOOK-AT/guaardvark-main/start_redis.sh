@@ -1,0 +1,277 @@
+#!/bin/bash
+# start_redis.sh - auto-provision and start a local Redis server for development
+# Handles installation, authentication setup, and .env credential management.
+
+VADER_RED="\033[38;5;196m"
+VADER_RED_DARK="\033[38;5;88m"
+VADER_RED_LIGHT="\033[38;5;203m"
+VADER_GRAY="\033[38;5;244m"
+VADER_GRAY_DARK="\033[38;5;238m"
+VADER_WHITE="\033[38;5;255m"
+VADER_WHITE_DIM="\033[38;5;250m"
+VADER_RESET="\033[0m"
+VADER_BOLD="\033[1m"
+
+vader_info() { echo -e "  ${VADER_GRAY}·${VADER_RESET} ${VADER_WHITE_DIM}$1${VADER_RESET}"; }
+vader_success() { echo -e "  ${VADER_RED}✔${VADER_RESET} ${VADER_WHITE}$1${VADER_RESET}"; }
+vader_warn() { echo -e "  ${VADER_RED_LIGHT}⚠${VADER_RESET} ${VADER_RED_LIGHT}$1${VADER_RESET}"; }
+vader_error() { echo -e "  ${VADER_RED_DARK}✖${VADER_RESET} ${VADER_RED}$1${VADER_RESET}"; }
+
+PORT=${REDIS_PORT:-6379}
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env"
+REDIS_CONF="/etc/redis/redis.conf"
+
+command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+# ─── Helper: extract Redis password from .env ────────────────────────────────
+
+get_redis_password() {
+  if [ -f "$ENV_FILE" ] && grep -q "^REDIS_URL=" "$ENV_FILE"; then
+    # Extract password from redis://:PASSWORD@host:port/db
+    sed -n 's|^REDIS_URL=redis://:\([^@]*\)@.*|\1|p' "$ENV_FILE"
+  fi
+}
+
+# ─── Helper: test Redis connectivity (with or without auth) ─────────────────
+
+redis_ping() {
+  local pass="$1"
+  if [ -n "$pass" ]; then
+    redis-cli -p "$PORT" -a "$pass" --no-auth-warning ping 2>/dev/null | grep -q PONG
+  else
+    redis-cli -p "$PORT" ping 2>/dev/null | grep -q PONG
+  fi
+}
+
+# ─── macOS (Homebrew) branch ─────────────────────────────────────────────────
+# No apt / systemd / /etc/redis on macOS. Use Homebrew + brew services, which run
+# Redis on 127.0.0.1:6379 passwordless — fine for local broker/cache use. This
+# block fully handles macOS and exits; the Linux flow below never runs there.
+if [ "$(uname -s)" = "Darwin" ]; then
+  if ! redis_ping ""; then
+    if ! command_exists redis-server; then
+      if command_exists brew; then
+        vader_info "Installing Redis via Homebrew..."
+        brew install redis >/dev/null 2>&1 || { vader_error "brew install redis failed. Run: brew install redis"; exit 1; }
+      else
+        vader_error "Homebrew not found. Install from https://brew.sh, then: brew install redis"
+        exit 1
+      fi
+    fi
+    vader_info "Starting Redis via brew services..."
+    brew services start redis >/dev/null 2>&1
+    sleep 2
+    if ! redis_ping ""; then
+      # brew services can lag or be unavailable — fall back to a direct daemon.
+      redis-server --daemonize yes --port "$PORT" --bind 127.0.0.1 --save "" >/dev/null 2>&1
+      sleep 2
+    fi
+  fi
+
+  if redis_ping ""; then
+    vader_success "Redis running on port $PORT."
+  else
+    vader_error "Redis failed to start. Run: brew services start redis"
+    exit 1
+  fi
+
+  # Point Celery/Redis at the local passwordless broker (idempotent rewrite).
+  if [ -f "$ENV_FILE" ]; then
+    NEW_URL="redis://localhost:${PORT}/0"
+    if ! grep -q "^REDIS_URL=${NEW_URL}$" "$ENV_FILE"; then
+      _tmp="${ENV_FILE}.tmp.$$"
+      grep -vE '^(REDIS_URL|CELERY_BROKER_URL|CELERY_RESULT_BACKEND)=' "$ENV_FILE" > "$_tmp"
+      {
+        echo "REDIS_URL=${NEW_URL}"
+        echo "CELERY_BROKER_URL=${NEW_URL}"
+        echo "CELERY_RESULT_BACKEND=${NEW_URL}"
+      } >> "$_tmp"
+      mv "$_tmp" "$ENV_FILE"
+      chmod 600 "$ENV_FILE"
+      vader_success "Redis broker URL set to local passwordless (.env updated)."
+    fi
+  fi
+  exit 0
+fi
+
+# ─── Step 1: Check if Redis is already running and reachable ─────────────────
+
+REDIS_PASS=$(get_redis_password)
+
+if command_exists redis-cli; then
+  if redis_ping "$REDIS_PASS"; then
+    # Redis is running — ensure critical settings are correct at runtime.
+    # If systemd started Redis before our config was written (e.g. after reboot),
+    # it may have compiled-in defaults (dir /, stop-writes-on-bgsave-error yes).
+    AUTH_ARGS=()
+    if [ -n "$REDIS_PASS" ]; then
+      AUTH_ARGS=(-a "$REDIS_PASS" --no-auth-warning)
+    fi
+    CURRENT_DIR=$(redis-cli "${AUTH_ARGS[@]}" -p "$PORT" CONFIG GET dir 2>/dev/null | tail -1)
+    NEEDS_RESTART=0
+    if [ "$CURRENT_DIR" = "/" ] || [ -z "$CURRENT_DIR" ]; then
+      vader_warn "Redis dir is '$CURRENT_DIR' (can't persist snapshots) — needs restart"
+      NEEDS_RESTART=1
+    fi
+    redis-cli "${AUTH_ARGS[@]}" -p "$PORT" CONFIG SET stop-writes-on-bgsave-error no >/dev/null 2>&1
+    if [ "$NEEDS_RESTART" -eq 1 ]; then
+      # Try systemctl restart with sudo first
+      RESTARTED=0
+      if sudo -n test -r /etc/redis/redis.conf 2>/dev/null; then
+        if ! sudo grep -q "^dir /var/lib/redis" /etc/redis/redis.conf 2>/dev/null; then
+          vader_info "Updating Redis config before restart..."
+          sudo mkdir -p "$(dirname "$REDIS_CONF")"
+          cat <<REDISEOF | sudo tee "$REDIS_CONF" >/dev/null
+# Guaardvark Redis config — auto-generated by start_redis.sh
+bind 127.0.0.1 ::1
+port $PORT
+requirepass $REDIS_PASS
+daemonize no
+dir /var/lib/redis
+stop-writes-on-bgsave-error no
+REDISEOF
+          sudo mkdir -p /var/lib/redis 2>/dev/null
+          sudo chown redis:redis /var/lib/redis 2>/dev/null
+          sudo chmod 640 "$REDIS_CONF"
+          sudo chown redis:redis "$REDIS_CONF" 2>/dev/null
+        fi
+        vader_info "Restarting Redis via systemctl..."
+        if sudo -n systemctl restart redis-server >/dev/null 2>&1; then
+          sleep 2
+          if redis_ping "$REDIS_PASS"; then
+            vader_success "Redis restarted with correct config."
+            RESTARTED=1
+          fi
+        fi
+      fi
+
+      # Fallback: no sudo or systemctl restart failed.
+      # Can't change dir at runtime and can't restart systemd service without sudo.
+      # Disable RDB snapshots entirely so the broken dir doesn't matter —
+      # Redis is used as a Celery broker/cache, not for durable storage.
+      if [ "$RESTARTED" -eq 0 ]; then
+        vader_info "Disabling RDB snapshots (dir is unwritable, not needed for broker use)..."
+        redis-cli "${AUTH_ARGS[@]}" -p "$PORT" CONFIG SET save "" >/dev/null 2>&1
+        vader_success "Redis running as broker-only (no RDB persistence)"
+      fi
+      exit 0
+    fi
+    vader_success "Redis already running on port $PORT."
+    exit 0
+  fi
+fi
+
+# ─── Step 2: Ensure redis-server is installed ────────────────────────────────
+
+if ! command_exists redis-server; then
+  vader_info "redis-server not found. Installing Redis..."
+  if command_exists apt-get; then
+    sudo apt-get update -qq >/dev/null 2>&1
+    if sudo apt-get install -y redis-server >/dev/null 2>&1; then
+      vader_success "Redis installed."
+    else
+      vader_error "Failed to install Redis. Install manually: sudo apt-get install -y redis-server"
+      exit 1
+    fi
+  else
+    vader_error "redis-server not found and apt-get not available. Install Redis manually."
+    exit 1
+  fi
+fi
+
+# ─── Step 3: Provision Redis authentication if not already configured ────────
+
+if [ -z "$REDIS_PASS" ]; then
+  vader_info "Provisioning Redis authentication..."
+  REDIS_PASS=$(openssl rand -hex 20)
+
+  # Write Redis config
+  if [ -w "$(dirname "$REDIS_CONF")" ] 2>/dev/null || sudo -n test -w "$(dirname "$REDIS_CONF")" 2>/dev/null; then
+    sudo mkdir -p "$(dirname "$REDIS_CONF")"
+    cat <<REDISEOF | sudo tee "$REDIS_CONF" >/dev/null
+# Guaardvark Redis config — auto-generated by start_redis.sh
+bind 127.0.0.1 ::1
+port $PORT
+requirepass $REDIS_PASS
+daemonize no
+dir /var/lib/redis
+stop-writes-on-bgsave-error no
+REDISEOF
+    sudo mkdir -p /var/lib/redis 2>/dev/null
+    sudo chown redis:redis /var/lib/redis 2>/dev/null
+    sudo chmod 640 "$REDIS_CONF"
+    sudo chown redis:redis "$REDIS_CONF" 2>/dev/null
+    vader_success "Redis config written to $REDIS_CONF"
+  else
+    vader_warn "Cannot write $REDIS_CONF (no sudo). Redis will run without auth."
+    REDIS_PASS=""
+  fi
+
+  # Update .env with Redis credentials
+  if [ -n "$REDIS_PASS" ] && [ -f "$ENV_FILE" ]; then
+    REDIS_URL="redis://:${REDIS_PASS}@localhost:${PORT}/0"
+
+    # Append or update each key
+    for key in REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND; do
+      if grep -q "^${key}=" "$ENV_FILE"; then
+        sed -i "s|^${key}=.*|${key}=${REDIS_URL}|" "$ENV_FILE"
+      else
+        echo "${key}=${REDIS_URL}" >> "$ENV_FILE"
+      fi
+    done
+
+    chmod 600 "$ENV_FILE"
+    vader_success "Redis credentials written to .env"
+  fi
+elif [ ! -f "$REDIS_CONF" ] || ! grep -q "^requirepass" "$REDIS_CONF" 2>/dev/null; then
+  # Password exists in .env but Redis config is missing — recreate it
+  vader_info "Restoring Redis config from .env credentials..."
+  if sudo -n test -w "$(dirname "$REDIS_CONF")" 2>/dev/null || [ -w "$(dirname "$REDIS_CONF")" ]; then
+    sudo mkdir -p "$(dirname "$REDIS_CONF")"
+    cat <<REDISEOF | sudo tee "$REDIS_CONF" >/dev/null
+# Guaardvark Redis config — auto-generated by start_redis.sh
+bind 127.0.0.1 ::1
+port $PORT
+requirepass $REDIS_PASS
+daemonize no
+dir /var/lib/redis
+stop-writes-on-bgsave-error no
+REDISEOF
+    sudo mkdir -p /var/lib/redis 2>/dev/null
+    sudo chown redis:redis /var/lib/redis 2>/dev/null
+    sudo chmod 640 "$REDIS_CONF"
+    sudo chown redis:redis "$REDIS_CONF" 2>/dev/null
+    vader_success "Redis config restored to $REDIS_CONF"
+  fi
+fi
+
+# ─── Step 4: Start Redis service ─────────────────────────────────────────────
+
+if command_exists systemctl; then
+  vader_info "Attempting to start redis service via systemctl..."
+  if systemctl --user start redis-server >/dev/null 2>&1 || sudo -n systemctl start redis-server >/dev/null 2>&1; then
+    sleep 2
+    if command_exists redis-cli && redis_ping "$REDIS_PASS"; then
+      vader_success "Redis service started via systemctl."
+      exit 0
+    fi
+  fi
+fi
+
+# ─── Step 5: Fallback - start redis-server directly ─────────────────────────
+
+vader_info "Starting redis-server directly on port $PORT..."
+if [ -n "$REDIS_PASS" ]; then
+  redis-server --daemonize yes --port "$PORT" --bind "127.0.0.1 ::1" --requirepass "$REDIS_PASS" --dir /tmp --stop-writes-on-bgsave-error no >/dev/null 2>&1
+else
+  redis-server --daemonize yes --port "$PORT" --dir /tmp --stop-writes-on-bgsave-error no >/dev/null 2>&1
+fi
+sleep 2
+if command_exists redis-cli && redis_ping "$REDIS_PASS"; then
+  vader_success "redis-server started on port $PORT."
+  exit 0
+else
+  vader_error "Failed to start redis-server."
+  exit 1
+fi

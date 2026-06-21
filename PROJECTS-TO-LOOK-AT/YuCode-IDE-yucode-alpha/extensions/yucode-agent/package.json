@@ -1,0 +1,64 @@
+{
+  "name": "yucode-agent",
+  "displayName": "YuCode Agent",
+  "description": "Native YuCode IDE agent integration",
+  "version": "0.1.0",
+  "publisher": "yucode",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:yucode.openAgent"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "yucode.openAgent",
+        "title": "YuCode: Open Agent",
+        "category": "YuCode"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "yucode",
+          "title": "YuCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "yucode": [
+        {
+          "type": "webview",
+          "id": "yucode.agentView",
+          "name": "YuCode Agent"
+        }
+      ]
+    },
+    "configuration": {
+  "title": "YuCode",
+  "properties": {
+    "yucode.runtimePath": {
+      "type": "string",
+      "default": "",
+      "description": "Path to yucode-agent.exe"
+    }
+  }
+}
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0"
+  }
+}
